@@ -112,7 +112,7 @@ public:
     {
         if (angle_diff1 != 0)
         {
-            const double radius =  dist1/(2*sin(angle_diff1/2));
+            const double radius =  dist1/(2*sin(angle_diff1/2)); // 通过弦长和圆心角计算半径。
             dist1 = fabs( angle_diff1 * radius ); // actual arg length!
         }
         if (angle_diff2 != 0)
@@ -322,19 +322,19 @@ public:
         dist = fabs( angle_diff * radius ); // actual arg length!
     }
     
-    const double vel1 = _measurement->linear.x;
+    const double vel1 = _measurement->linear.x; //设置的目标线速度。
     double vel2 = dist / dt->dt();
 
     // consider directions
     //vel2 *= g2o::sign(diff[0]*cos(pose1->theta()) + diff[1]*sin(pose1->theta())); 
     vel2 *= fast_sigmoid( 100*(diff.x()*cos(pose1->theta()) + diff.y()*sin(pose1->theta())) ); 
     
-    const double acc_lin  = (vel2 - vel1) / dt->dt();
+    const double acc_lin  = (vel2 - vel1) / dt->dt(); // dt时间内从目标速度vel1加速到实际速度轨迹速度vel2所需的加速度。
     
     _error[0] = penaltyBoundToInterval(acc_lin,cfg_->robot.acc_lim_x,cfg_->optim.penalty_epsilon);
     
     // ANGULAR ACCELERATION
-    const double omega1 = _measurement->angular.z;
+    const double omega1 = _measurement->angular.z;  // 目标角速度
     const double omega2 = angle_diff / dt->dt();
     const double acc_rot  = (omega2 - omega1) / dt->dt();
       

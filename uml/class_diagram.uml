@@ -1,0 +1,270 @@
+@startuml
+
+class BaseTebUnaryEdge <<D,, E,, VertexXi >>
+{
+
+}
+
+class BaseTebMultiEdge <<D,, E>>
+{
+
+}
+
+class BaseTebBinaryEdge <<D,, E,, VertexXi,, VertexXj>>
+{
+
+}
+
+class EdgeAccelerationStart
+{
+
+}
+
+class EdgeAcceleration
+{
+
+}
+
+class EdgeDynamicObstacle
+{
+
+}
+class EdgeKinematicsDiffDrive
+{
+
+}
+class EdgeObstacle
+{
+
+}
+class EdgeInflatedObstacle
+{
+
+}
+class EdgePreferRotDir
+{
+
+}
+class EdgeShortestPath
+{
+
+}
+
+class EdgeTimeOptimal
+{
+
+}
+
+class EdgeVelocity
+{
+
+}
+class EdgeViaPoint
+{
+
+}
+
+BaseTebUnaryEdge -up-|> g2o::BaseUnaryEdge
+BaseTebMultiEdge -up-|> g2o::BaseMultiEdge
+EdgeAccelerationStart -up-|> BaseTebMultiEdge
+EdgeAcceleration -up-|> BaseTebMultiEdge
+EdgeAccelerationGoal -up-|> BaseTebMultiEdge
+EdgeAccelerationHolonomic -up-|> BaseTebMultiEdge
+EdgeAccelerationHolonomicStart -up-|> BaseTebMultiEdge
+EdgeAccelerationHolonomicGoal -up-|> BaseTebMultiEdge
+EdgeDynamicObstacle -up-|> BaseTebUnaryEdge
+EdgeKinematicsDiffDrive -up-|> BaseTebBinaryEdge
+EdgeObstacle -up-|> BaseTebUnaryEdge
+EdgeInflatedObstacle -up-|> BaseTebUnaryEdge
+EdgePreferRotDir -up-|> BaseTebBinaryEdge
+EdgeShortestPath -up-|> BaseTebBinaryEdge
+EdgeTimeOptimal -up-|> BaseTebUnaryEdge
+EdgeVelocity -up-|> BaseTebMultiEdge
+EdgeViaPoint -up-|> BaseTebUnaryEdge
+
+EdgeDynamicObstacle --> BaseRobotFootprintModel
+EdgeObstacle --> BaseRobotFootprintModel
+
+class VertexPose
+{
+
+}
+class VertexTimeDiff
+{
+
+}
+
+VertexPose -up-|> g2o::BaseVertex
+VertexTimeDiff -up-|> g2o::BaseVertex
+
+class EquivalenceClass
+{
+
+}
+
+class HcGraphVertex
+{
+
+}
+
+class GraphSearchInterface
+{
+    +createGraph(): void
+    +clearGraph(): void
+}
+
+class lrKeyPointGraph
+{
+    +createGraph(): void
+}
+
+class ProbRoadmapGraph
+{
+    +createGraph(): void
+}
+class HSignature
+{
+
+}
+class HSignature3d
+{
+
+}
+
+GraphSearchInterface ..> PoseSE2
+GraphSearchInterface --> TebConfig
+GraphSearchInterface --> HomotopyClassPlanner
+GraphSearchInterface ..> HcGraphVertex
+
+lrKeyPointGraph -up-|> GraphSearchInterface
+ProbRoadmapGraph -up-|> GraphSearchInterface
+HSignature -up-|> EquivalenceClass
+HSignature3d -up-|> EquivalenceClass
+HSignature --> TebConfig
+HSignature3d --> TebConfig
+
+Interface PlannerInterface
+{
+
+}
+
+class HomotopyClassPlanner
+{
+    
+}
+class TebOptimalPlanner
+{
+
+}
+
+HomotopyClassPlanner -up-|> PlannerInterface
+TebOptimalPlanner -up-|> PlannerInterface
+HomotopyClassPlanner --> TebOptimalPlanner
+HomotopyClassPlanner --> TebConfig
+HomotopyClassPlanner --> Obstacle
+HomotopyClassPlanner --> TebVisualization
+HomotopyClassPlanner --> BaseRobotFootprintModel
+HomotopyClassPlanner --> EquivalenceClass
+HomotopyClassPlanner --> GraphSearchInterface
+TebOptimalPlanner --> g2o::SparseOptimizer
+TebOptimalPlanner --> TebConfig
+TebOptimalPlanner --> Obstacle
+TebOptimalPlanner --> BaseRobotFootprintModel
+TebOptimalPlanner --> TimedElasticBand
+
+
+class Obstacle
+{
+
+}
+
+class PointObstacle
+{
+
+}
+PointObstacle -up-|> Obstacle
+CircularObstacle -up-|> Obstacle
+LineObstacle -up-|> Obstacle
+PolygonObstacle -up-|> Obstacle
+
+Interface BaseRobotFootprintModel
+{
+
+}
+
+class PointRobotFootprint
+{
+
+}
+
+class CircularRobotFootprint
+{
+
+}
+
+class TwoCirclesRobotFootprint
+{
+
+}
+
+class LineRobotFootprint
+{
+
+}
+
+class PolygonRobotFootprint
+{
+
+}
+
+
+PointRobotFootprint .up.|> BaseRobotFootprintModel
+CircularRobotFootprint .up.|> BaseRobotFootprintModel
+TwoCirclesRobotFootprint .up.|> BaseRobotFootprintModel
+LineRobotFootprint .up.|> BaseRobotFootprintModel
+PolygonRobotFootprint .up.|> BaseRobotFootprintModel
+
+
+class PoseSE2
+{
+
+}
+
+class TimedElasticBand
+{
+
+}
+TimedElasticBand --> VertexPose
+TimedElasticBand --> VertexTimeDiff
+TimedElasticBand ..> PoseSE2
+TimedElasticBand ..> Obstacle
+
+class TebConfig
+{
+    
+}
+class FailureDetector
+{
+
+}
+
+class TebVisualization
+{
+
+}
+
+class TebLocalPlannerROS
+{
+
+}
+TebLocalPlannerROS -up-|> nav_core::BaseLocalPlanner
+TebLocalPlannerROS --> PlannerInterface
+TebLocalPlannerROS --> Obstacle
+TebLocalPlannerROS --> TebVisualization
+TebLocalPlannerROS --> TebConfig
+TebLocalPlannerROS --> FailureDetector
+TebLocalPlannerROS --> costmap_converter::BaseCostmapToPolygons
+TebLocalPlannerROS --> PoseSE2
+
+
+@enduml

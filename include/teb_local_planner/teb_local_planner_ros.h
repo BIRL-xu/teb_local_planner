@@ -203,7 +203,7 @@ protected:
   /**
    * @brief Update internal obstacle vector based on custom messages received via subscriber
    * @remarks All previous obstacles are NOT cleared. Call this method after other update methods.
-   * @sa updateObstacleContainerWithCostmap, updateObstacleContainerWithCostmapConverter
+   * @sa updateObstacleContainerWithCostmap, updateObstacleContainerWithCostmapConverter, sa-->see also
    */
   void updateObstacleContainerWithCustomObstacles();
 

@@ -149,7 +149,7 @@ public:
 };
 
 
-
+// 以目标点朝向相垂直，在障碍物两侧放置关键点。用在点状小障碍物的场景效果很好。
 class lrKeyPointGraph : public GraphSearchInterface
 {
 public:
@@ -177,7 +177,7 @@ public:
 
 
 
-
+// 使用PRM采样法构建搜索图，用在复杂障碍物，非点状且较大障碍物的场景。
 class ProbRoadmapGraph : public GraphSearchInterface
 {
 public:

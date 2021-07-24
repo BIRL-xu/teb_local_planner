@@ -1,0 +1,54 @@
+{
+    "configurations": [
+        {
+            "browse": {
+                "databaseFilename": "",
+                "limitSymbolsToIncludedHeaders": true
+            },
+            "includePath": [
+                "/home/baul/catkin_ws/devel/include/**",
+                "/opt/ros/kinetic/include/**",
+                "/home/baul/catkin_ws/src/carlike_robot_sim/racecar/ackermann_cmd_mux/include/**",
+                "/home/baul/catkin_ws/src/navigation2/nav2_dwb_controller/costmap_queue/include/**",
+                "/home/baul/catkin_ws/src/navigation2/nav2_dwb_controller/dwb_core/include/**",
+                "/home/baul/catkin_ws/src/navigation2/nav2_dwb_controller/dwb_critics/include/**",
+                "/home/baul/catkin_ws/src/navigation2/nav2_dwb_controller/dwb_plugins/include/**",
+                "/home/baul/catkin_ws/src/eband_local_planner/include/**",
+                "/home/baul/catkin_ws/src/carlike_robot_sim/calf_carlike_robot/hector_slam/hector_geotiff/include/**",
+                "/home/baul/catkin_ws/src/carlike_robot_sim/calf_carlike_robot/hector_slam/hector_map_tools/include/**",
+                "/home/baul/catkin_ws/src/carlike_robot_sim/calf_carlike_robot/hector_slam/hector_mapping/include/**",
+                "/home/baul/catkin_ws/src/carlike_robot_sim/calf_carlike_robot/hector_slam/hector_marker_drawing/include/**",
+                "/home/baul/catkin_ws/src/lidar_localization/include/**",
+                "/home/baul/catkin_ws/src/navigation2/nav2_amcl/include/**",
+                "/home/baul/catkin_ws/src/navigation2/nav2_behavior_tree/include/**",
+                "/home/baul/catkin_ws/src/navigation2/nav2_bt_navigator/include/**",
+                "/home/baul/catkin_ws/src/navigation2/nav2_controller/include/**",
+                "/home/baul/catkin_ws/src/navigation2/nav2_core/include/**",
+                "/home/baul/catkin_ws/src/navigation2/nav2_costmap_2d/include/**",
+                "/home/baul/catkin_ws/src/navigation2/nav2_lifecycle_manager/include/**",
+                "/home/baul/catkin_ws/src/navigation2/nav2_map_server/include/**",
+                "/home/baul/catkin_ws/src/navigation2/nav2_navfn_planner/include/**",
+                "/home/baul/catkin_ws/src/navigation2/nav2_planner/include/**",
+                "/home/baul/catkin_ws/src/navigation2/nav2_recoveries/include/**",
+                "/home/baul/catkin_ws/src/navigation2/nav2_rviz_plugins/include/**",
+                "/home/baul/catkin_ws/src/navigation2/nav2_smac_planner/include/**",
+                "/home/baul/catkin_ws/src/navigation2/nav2_util/include/**",
+                "/home/baul/catkin_ws/src/navigation2/nav2_voxel_grid/include/**",
+                "/home/baul/catkin_ws/src/navigation2/nav2_waypoint_follower/include/**",
+                "/home/baul/catkin_ws/src/navigation2/nav2_dwb_controller/nav_2d_utils/include/**",
+                "/home/baul/catkin_ws/src/RoboRTS/roborts_common/include/**",
+                "/home/baul/catkin_ws/src/RoboRTS/roborts_costmap/include/**",
+                "/home/baul/catkin_ws/src/carlike_robot_sim/calf_carlike_robot/robot_localization/include/**",
+                "/home/baul/catkin_ws/src/carlike_robot_sim/calf_carlike_robot/robot_pose_ekf/include/**",
+                "/home/baul/catkin_ws/src/teb_local_planner/include/**",
+                "/usr/include/**"
+            ],
+            "name": "ROS",
+            "intelliSenseMode": "gcc-x64",
+            "compilerPath": "/usr/bin/gcc",
+            "cStandard": "gnu11",
+            "cppStandard": "c++17"
+        }
+    ],
+    "version": 4
+}

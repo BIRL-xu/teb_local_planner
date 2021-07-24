@@ -85,7 +85,7 @@ void TimedElasticBand::addTimeDiff(double dt, bool fixed)
 
 void TimedElasticBand::addPoseAndTimeDiff(double x, double y, double angle, double dt)
 {
-  if (sizePoses() != sizeTimeDiffs())
+  if (sizePoses() != sizeTimeDiffs()) // 时间差数量不是比位姿数量少一个吗？为什么二者要直接作数量相等判断?
   {
     addPose(x,y,angle,false);
     addTimeDiff(dt,false);
@@ -123,13 +123,13 @@ void TimedElasticBand::addPoseAndTimeDiff(const Eigen::Ref<const Eigen::Vector2d
 void TimedElasticBand::deletePose(int index)
 {
   ROS_ASSERT(index<pose_vec_.size());
-  delete pose_vec_.at(index);
-  pose_vec_.erase(pose_vec_.begin()+index);
+  delete pose_vec_.at(index); // 先释放用new分配的内存
+  pose_vec_.erase(pose_vec_.begin()+index); // 再删除vector对应元素.
 }
 
 void TimedElasticBand::deletePoses(int index, int number)
 {
-  ROS_ASSERT(index+number<=(int)pose_vec_.size());
+  ROS_ASSERT(index+number<=(int)pose_vec_.size()); // 只删除[index, index + 1, ..., index + number - 1]，所以index+number最大只能和位姿容器大小一致。
   for (int i = index; i<index+number; ++i)
     delete pose_vec_.at(i);
   pose_vec_.erase(pose_vec_.begin()+index, pose_vec_.begin()+index+number);
@@ -199,7 +199,9 @@ void TimedElasticBand::setTimeDiffVertexFixed(int index, bool status)
   timediff_vec_.at(index)->setFixed(status);
 }
 
-
+// 根据参数指定的参考时间间隔和阈值对初始轨迹的时间间隔进行合并或细分。
+// 合并:两个相邻时间间隔相加，删除中间位姿
+// 细分:将某个大时间间隔平分为两个，插入中间位姿。
 void TimedElasticBand::autoResize(double dt_ref, double dt_hysteresis, int min_samples, int max_samples, bool fast_mode)
 {  
   ROS_ASSERT(sizeTimeDiffs() == 0 || sizeTimeDiffs() + 1 == sizePoses());
@@ -212,6 +214,7 @@ void TimedElasticBand::autoResize(double dt_ref, double dt_hysteresis, int min_s
 
     for(int i=0; i < sizeTimeDiffs(); ++i) // TimeDiff connects Point(i) with Point(i+1)
     {
+      // 时间差大于参数设定的时间差加阈值时，将时间差平分，并插入中间点。
       if(TimeDiff(i) > dt_ref + dt_hysteresis && sizeTimeDiffs()<max_samples)
       {
         //ROS_DEBUG("teb_local_planner: autoResize() inserting new bandpoint i=%u, #TimeDiffs=%lu",i,sizeTimeDiffs());
@@ -219,7 +222,7 @@ void TimedElasticBand::autoResize(double dt_ref, double dt_hysteresis, int min_s
         double newtime = 0.5*TimeDiff(i);
 
         TimeDiff(i) = newtime;
-        insertPose(i+1, PoseSE2::average(Pose(i),Pose(i+1)) );
+        insertPose(i+1, PoseSE2::average(Pose(i),Pose(i+1)) ); // 插入位姿的位置为新时间段的末端点
         insertTimeDiff(i+1,newtime);
 
         modified = true;
@@ -228,14 +231,16 @@ void TimedElasticBand::autoResize(double dt_ref, double dt_hysteresis, int min_s
       {
         //ROS_DEBUG("teb_local_planner: autoResize() deleting bandpoint i=%u, #TimeDiffs=%lu",i,sizeTimeDiffs());
 
-        if(i < ((int)sizeTimeDiffs()-1))
+        if(i < ((int)sizeTimeDiffs()-1))  // 不是最优一个时间差元素
         {
+          // 将当前时间差加到下一个时间差中，删除当前时间差及它的末端点位姿
           TimeDiff(i+1) = TimeDiff(i+1) + TimeDiff(i);
           deleteTimeDiff(i);
           deletePose(i+1);
         }
         else
         { // last motion should be adjusted, shift time to the interval before
+          // 最后一个时间差，将其加到前一个时间差上，并删除最后一个时间差及它的起点位姿，因为末端点位姿是目标点，不能删除。
           TimeDiff(i-1) += TimeDiff(i);
           deleteTimeDiff(i);
           deletePose(i);
@@ -285,6 +290,13 @@ double TimedElasticBand::getAccumulatedDistance() const
   return dist;
 }
 
+/**
+ * 给定起点和目标点，初始化一条轨迹。
+ * 以参数diststep等分起点到目标点的直线段，所有位姿点的姿态角都为由起点指向目标点的方向角，每一段时间间隔为diststep/max_vel_x.
+ * 如果位姿点数小于min_samples，则在已有轨迹末端点和目标点之间循环插入中间位姿，对应
+ * 的时间间隔为两点距离除于最大线速度。
+ * Baul:上述插值策略会导致越靠近目标点位姿点越密集，可考虑以需要插入的位姿数量来平分轨迹末端点和目标点的线段。
+ * **/
 bool TimedElasticBand::initTrajectoryToGoal(const PoseSE2& start, const PoseSE2& goal, double diststep, double max_vel_x, int min_samples, bool guess_backwards_motion)
 {
   if (!isInit())
@@ -298,6 +310,7 @@ bool TimedElasticBand::initTrajectoryToGoal(const PoseSE2& start, const PoseSE2&
     {
       Eigen::Vector2d point_to_goal = goal.position()-start.position();
       double dir_to_goal = std::atan2(point_to_goal[1],point_to_goal[0]); // direction to goal
+      // 距离步长在x和y轴上的分量
       double dx = diststep*std::cos(dir_to_goal);
       double dy = diststep*std::sin(dir_to_goal);
       double orient_init = dir_to_goal;
@@ -307,10 +320,10 @@ bool TimedElasticBand::initTrajectoryToGoal(const PoseSE2& start, const PoseSE2&
       // TODO: timestep ~ max_vel_x_backwards for backwards motions
       
       double dist_to_goal = point_to_goal.norm();
-      double no_steps_d = dist_to_goal/std::abs(diststep); // ignore negative values
-      unsigned int no_steps = (unsigned int) std::floor(no_steps_d);
+      double no_steps_d = dist_to_goal/std::abs(diststep); // ignore negative values，将起点到终点的直线段按照步长等分的份数。
+      unsigned int no_steps = (unsigned int) std::floor(no_steps_d); // 向上取整以保护整段线段。
 
-      if (max_vel_x > 0) timestep = diststep / max_vel_x;
+      if (max_vel_x > 0) timestep = diststep / max_vel_x; // 以最大速度匀速经过步长距离所需的时间作为时间步长。
       
       for (unsigned int i=1; i<=no_steps; i++) // start with 1! starting point had index 0
       {
@@ -328,13 +341,14 @@ bool TimedElasticBand::initTrajectoryToGoal(const PoseSE2& start, const PoseSE2&
       while (sizePoses() < min_samples-1) // subtract goal point that will be added later
       {
         // simple strategy: interpolate between the current pose and the goal
-        PoseSE2 intermediate_pose = PoseSE2::average(BackPose(), goal);
-        if (max_vel_x > 0) timestep = (intermediate_pose.position()-BackPose().position()).norm()/max_vel_x;
+        PoseSE2 intermediate_pose = PoseSE2::average(BackPose(), goal); // 在已添加的轨迹末端点和目标点之间插入中间位姿。
+        if (max_vel_x > 0) timestep = (intermediate_pose.position()-BackPose().position()).norm()/max_vel_x; // 轨迹末端点和插入点的距离除于最大线速度为连接二者的时间步长。
         addPoseAndTimeDiff( intermediate_pose, timestep ); // let the optimier correct the timestep (TODO: better initialization
       }
     }
     
     // add goal
+    // 添加目标点，并计算已有轨迹的末端点到目标点的时间差。
     if (max_vel_x > 0) timestep = (goal.position()-BackPose().position()).norm()/max_vel_x;
     addPoseAndTimeDiff(goal,timestep); // add goal point
     setPoseVertexFixed(sizePoses()-1,true); // GoalConf is a fixed constraint during optimization	
@@ -348,7 +362,11 @@ bool TimedElasticBand::initTrajectoryToGoal(const PoseSE2& start, const PoseSE2&
   return true;
 }
 
-
+/**
+ * 给定参考路径，初始化一条轨迹。
+ * 以给定的参考路径点作为轨迹顶点，两个轨迹顶点间距的匀速运动时间作为时间差。
+ * 同样地，不满足最小顶点数量时，在轨迹末端点和目标点间循环插入中间点。
+ * **/
 bool TimedElasticBand::initTrajectoryToGoal(const std::vector<geometry_msgs::PoseStamped>& plan, double max_vel_x, bool estimate_orient, int min_samples, bool guess_backwards_motion)
 {
   
@@ -362,6 +380,7 @@ bool TimedElasticBand::initTrajectoryToGoal(const std::vector<geometry_msgs::Pos
     addPose(start); // add starting point with given orientation
     setPoseVertexFixed(0,true); // StartConf is a fixed constraint during optimization
 
+    // 检查目标点是否在起点后方。
     bool backwards = false;
     if (guess_backwards_motion && (goal.position()-start.position()).dot(start.orientationUnitVec()) < 0) // check if the goal is behind the start pose (w.r.t. start orientation)
         backwards = true;
@@ -372,6 +391,7 @@ bool TimedElasticBand::initTrajectoryToGoal(const std::vector<geometry_msgs::Pos
         double yaw;
         if (estimate_orient)
         {
+            // 使用由当前点指向下一点的方向角作为姿态角。
             // get yaw from the orientation of the distance vector between pose_{i+1} and pose_{i}
             double dx = plan[i+1].pose.position.x - plan[i].pose.position.x;
             double dy = plan[i+1].pose.position.y - plan[i].pose.position.y;
@@ -384,10 +404,11 @@ bool TimedElasticBand::initTrajectoryToGoal(const std::vector<geometry_msgs::Pos
             yaw = tf::getYaw(plan[i].pose.orientation);
         }
         PoseSE2 intermediate_pose(plan[i].pose.position.x, plan[i].pose.position.y, yaw);
-        if (max_vel_x > 0) dt = (intermediate_pose.position()-BackPose().position()).norm()/max_vel_x;
+        if (max_vel_x > 0) dt = (intermediate_pose.position()-BackPose().position()).norm()/max_vel_x; // 使用上一个点到当前点的最大匀速运动时间作为时间差。
         addPoseAndTimeDiff(intermediate_pose, dt);
     }
     
+    // 位姿点数量不满足要求时，在轨迹末端点和目标点之间插入中间点。
     // if number of samples is not larger than min_samples, insert manually
     if ( sizePoses() < min_samples-1 )
     {
@@ -416,7 +437,9 @@ bool TimedElasticBand::initTrajectoryToGoal(const std::vector<geometry_msgs::Pos
   return true;
 }
 
-
+/**
+ * 找到离参考点最近的轨迹点及其距离值。
+ * **/
 int TimedElasticBand::findClosestTrajectoryPose(const Eigen::Ref<const Eigen::Vector2d>& ref_point, double* distance, int begin_idx) const
 {
   std::vector<double> dist_vec; // TODO: improve! efficiency
@@ -425,6 +448,8 @@ int TimedElasticBand::findClosestTrajectoryPose(const Eigen::Ref<const Eigen::Ve
   int n = sizePoses();
   
   // calc distances
+  // 计算从给定的轨迹顶点索引开始的所有顶点到参考点的欧式距离。
+  // Baul:一个循环就可以搞定。。。
   for (int i = begin_idx; i < n; i++)
   {
     Eigen::Vector2d diff = ref_point - Pose(i).position();
@@ -451,7 +476,9 @@ int TimedElasticBand::findClosestTrajectoryPose(const Eigen::Ref<const Eigen::Ve
   return begin_idx+index_min;
 }
 
-
+/**
+ * 找到离参考线段最近的轨迹点及其距离值。
+ * **/
 int TimedElasticBand::findClosestTrajectoryPose(const Eigen::Ref<const Eigen::Vector2d>& ref_line_start, const Eigen::Ref<const Eigen::Vector2d>& ref_line_end, double* distance) const
 {
   std::vector<double> dist_vec; // TODO: improve! efficiency
@@ -460,6 +487,7 @@ int TimedElasticBand::findClosestTrajectoryPose(const Eigen::Ref<const Eigen::Ve
   int n = sizePoses();
   
   // calc distances  
+  // 计算轨迹的所有点到指定线段的距离。
   for (int i = 0; i < n; i++)
   {
     Eigen::Vector2d point = Pose(i).position();
@@ -487,25 +515,30 @@ int TimedElasticBand::findClosestTrajectoryPose(const Eigen::Ref<const Eigen::Ve
   return index_min; // return index, because it's equal to the vertex, which represents this bandpoint
 }
 
+/**
+ * 找到离多边形最近的轨迹点及其对应距离。
+ * **/
 int TimedElasticBand::findClosestTrajectoryPose(const Point2dContainer& vertices, double* distance) const
 {
   if (vertices.empty())
     return 0;
   else if (vertices.size() == 1)
-    return findClosestTrajectoryPose(vertices.front());
+    return findClosestTrajectoryPose(vertices.front()); // 一个参考顶点，则计算轨迹到点的最近距离
   else if (vertices.size() == 2)
-    return findClosestTrajectoryPose(vertices.front(), vertices.back());
+    return findClosestTrajectoryPose(vertices.front(), vertices.back()); // 两个参考顶点，则计算轨迹到线段的最近距离。
   
   std::vector<double> dist_vec; // TODO: improve! efficiency
   dist_vec.reserve(sizePoses());
   
   int n = sizePoses();
   
-  // calc distances  
+  // calc distances
+  // 计算每个轨迹点到参考顶点多边形轮廓的最短距离，即轨迹点离哪条多边形的边最近。
   for (int i = 0; i < n; i++)
   {
     Eigen::Vector2d point = Pose(i).position();
     double diff = HUGE_VAL;
+    // 计算当前轨迹点到由相邻参考顶点构成的直线段的最小距离
     for (int j = 0; j < (int) vertices.size()-1; ++j)
     {
        diff = std::min(diff, distance_point_to_segment_2d(point, vertices[j], vertices[j+1]));
@@ -520,6 +553,7 @@ int TimedElasticBand::findClosestTrajectoryPose(const Point2dContainer& vertices
   // find minimum
   int index_min = 0;
 
+  // 再找出所有距离中的最小值，即找出离多边形最近的轨迹点。
   double last_value = dist_vec.at(0);
   for (int i=1; i < (int)dist_vec.size(); i++)
   {
@@ -534,9 +568,10 @@ int TimedElasticBand::findClosestTrajectoryPose(const Point2dContainer& vertices
   return index_min; // return index, because it's equal to the vertex, which represents this bandpoint
 }
 
-
+ // 根据对应的障碍物类型调用之前的计算距离最近点函数。
 int TimedElasticBand::findClosestTrajectoryPose(const Obstacle& obstacle, double* distance) const
 {
+  // 通过运行时类型转换来判断是哪种类型的障碍物！
   const PointObstacle* pobst = dynamic_cast<const PointObstacle*>(&obstacle);
   if (pobst)
     return findClosestTrajectoryPose(pobst->position(), distance);
@@ -548,7 +583,7 @@ int TimedElasticBand::findClosestTrajectoryPose(const Obstacle& obstacle, double
   const PolygonObstacle* polyobst = dynamic_cast<const PolygonObstacle*>(&obstacle);
   if (polyobst)
     return findClosestTrajectoryPose(polyobst->vertices(), distance);
-  
+  // 如果上述已定义类型都不是，则使用多边形的形心来计算。
   return findClosestTrajectoryPose(obstacle.getCentroid(), distance);  
 }
 
@@ -564,8 +599,12 @@ void TimedElasticBand::updateAndPruneTEB(boost::optional<const PoseSE2&> new_sta
     // (remove already passed states)
     double dist_cache = (new_start->position()- Pose(0).position()).norm();
     double dist;
+
+    // 当轨迹点数量与最小样本数量差在10个以内时，将轨迹裁剪到最小样本数量；
+    // 相差太大时，最多裁剪10个。
     int lookahead = std::min<int>( sizePoses()-min_samples, 10); // satisfy min_samples, otherwise max 10 samples
 
+    // 在要裁剪的几个点中，找出离新起点最近的那个。
     int nearest_idx = 0;
     for (int i = 1; i<=lookahead; ++i)
     {
@@ -583,21 +622,28 @@ void TimedElasticBand::updateAndPruneTEB(boost::optional<const PoseSE2&> new_sta
     {
       // nearest_idx is equal to the number of samples to be removed (since it counts from 0 ;-) )
       // WARNING delete starting at pose 1, and overwrite the original pose(0) with new_start, since Pose(0) is fixed during optimization!
+      // 从第二个位姿开始删除，两个原因:
+      // 1. 第一个位姿被设为固定位姿，只覆盖位姿，不修改属性(主要原因)
+      // 2. nearest_idx是从1开始计数的。
       deletePoses(1, nearest_idx);  // delete first states such that the closest state is the new first one
       deleteTimeDiffs(1, nearest_idx); // delete corresponding time differences
     }
     
     // update start
-    Pose(0) = *new_start;
+    Pose(0) = *new_start; // 更新起点位姿
   }
   
   if (new_goal && sizePoses()>0)
   {
-    BackPose() = *new_goal;
+    BackPose() = *new_goal; // 更新目标点位姿。
   }
 };
 
-
+/**
+ * 先检查轨迹是否在以机器人为中心半径为radius的大圆内，如果在该圆内，
+ * 则进一步判断落在机器人后面的轨迹是否在指定的距离阈值max_dist_behind_robot内。
+ * 如果上述两个条件都满足，则认为轨迹在指定区域内，返回true；否则，返回false.
+ * **/
 bool TimedElasticBand::isTrajectoryInsideRegion(double radius, double max_dist_behind_robot, int skip_poses)
 {
     if (sizePoses()<=0)

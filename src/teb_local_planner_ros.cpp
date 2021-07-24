@@ -99,6 +99,8 @@ void TebLocalPlannerROS::initialize(std::string name, tf::TransformListener* tf,
     RobotFootprintModelPtr robot_model = getRobotFootprintFromParamServer(nh);
     
     // create the planner instance
+    // 选择是否使用2015年发表的论文<Planning of multiple robot trajectories in distinctive topologies>中提出的
+    // PRM规划多条备选轨迹的功能。
     if (cfg_.hcp.enable_homotopy_class_planning)
     {
       planner_ = PlannerInterfacePtr(new HomotopyClassPlanner(cfg_, &obstacles_, robot_model, visualization_, &via_points_));
@@ -115,6 +117,7 @@ void TebLocalPlannerROS::initialize(std::string name, tf::TransformListener* tf,
     costmap_ros_ = costmap_ros;
     costmap_ = costmap_ros_->getCostmap(); // locking should be done in MoveBase.
     
+    // 实例化ROS自带的基于栅格代价地图进行碰撞检测的类。
     costmap_model_ = boost::make_shared<base_local_planner::CostmapModel>(*costmap_);
 
     global_frame_ = costmap_ros_->getGlobalFrameID();
@@ -126,6 +129,7 @@ void TebLocalPlannerROS::initialize(std::string name, tf::TransformListener* tf,
     {
       try
       {
+        // 使用ros的工厂模式在线实例化代价地图转换类。
         costmap_converter_ = costmap_converter_loader_.createInstance(cfg_.obstacles.costmap_converter_plugin);
         std::string converter_name = costmap_converter_loader_.getName(cfg_.obstacles.costmap_converter_plugin);
         // replace '::' by '/' to convert the c++ namespace to a NodeHandle namespace
@@ -263,7 +267,7 @@ bool TebLocalPlannerROS::computeVelocityCommands(geometry_msgs::Twist& cmd_vel)
   double delta_orient = g2o::normalize_theta( tf::getYaw(global_goal.getRotation()) - robot_pose_.theta() );
   if(fabs(std::sqrt(dx*dx+dy*dy)) < cfg_.goal_tolerance.xy_goal_tolerance
     && fabs(delta_orient) < cfg_.goal_tolerance.yaw_goal_tolerance
-    && (!cfg_.goal_tolerance.complete_global_plan || via_points_.size() == 0))
+    && (!cfg_.goal_tolerance.complete_global_plan || via_points_.size() == 0)) /**如果强制机器人走完所有路径时，只有当没有via_point了才认为机器人到达目标点**/
   {
     goal_reached_ = true;
     return true;
@@ -280,7 +284,8 @@ bool TebLocalPlannerROS::computeVelocityCommands(geometry_msgs::Twist& cmd_vel)
     ROS_WARN("Transformed plan is empty. Cannot determine a local plan.");
     return false;
   }
-              
+
+  // 使用局部代价地图内的最后一个参考路径点作为局部目标点。            
   // Get current goal point (last point of the transformed plan)
   tf::Stamped<tf::Pose> goal_point;
   tf::poseStampedMsgToTF(transformed_plan.back(), goal_point);
@@ -290,6 +295,7 @@ bool TebLocalPlannerROS::computeVelocityCommands(geometry_msgs::Twist& cmd_vel)
   {
     robot_goal_.theta() = estimateLocalGoalOrientation(global_plan_, goal_point, goal_idx, tf_plan_to_global);
     // overwrite/update goal orientation of the transformed plan with the actual goal (enable using the plan as initialization)
+    // 局部目标点的姿态与transformed_plan的最后一个点的姿态保持一致，因为后面的路径规划使用的是transformed_plan，没有传入局部目标点。
     transformed_plan.back().pose.orientation = tf::createQuaternionMsgFromYaw(robot_goal_.theta());
   }  
   else
@@ -298,6 +304,7 @@ bool TebLocalPlannerROS::computeVelocityCommands(geometry_msgs::Twist& cmd_vel)
   }
 
   // overwrite/update start of the transformed plan with the actual robot position (allows using the plan as initial trajectory)
+  // transformed_plan只有一个点时，插入机器人当前位姿作为它的第一个点。
   if (transformed_plan.size()==1) // plan only contains the goal
   {
     transformed_plan.insert(transformed_plan.begin(), geometry_msgs::PoseStamped()); // insert start (not yet initialized)
@@ -311,7 +318,7 @@ bool TebLocalPlannerROS::computeVelocityCommands(geometry_msgs::Twist& cmd_vel)
   if (costmap_converter_)
     updateObstacleContainerWithCostmapConverter();
   else
-    updateObstacleContainerWithCostmap();
+    updateObstacleContainerWithCostmap(); // 更新点状障碍物。
   
   // also consider custom obstacles (must be called after other updates, since the container is not cleared)
   updateObstacleContainerWithCustomObstacles();
@@ -335,6 +342,8 @@ bool TebLocalPlannerROS::computeVelocityCommands(geometry_msgs::Twist& cmd_vel)
   }
          
   // Check feasibility (but within the first few states only)
+  // 使用ROS footprint和TEB自定义footprint进行最优轨迹的可行性检测，只会对前几个位姿进行检测而不是整条轨迹都进行，使用几个位姿进行检测由参数feasibility_check_no_poses决定。
+  // 不对整条轨迹都进行检测的原因是规划频率较高，机器人往往只会沿着最优轨迹行驶一小段距离就进入下一个规划周期了，不是走完整条轨迹，所有轨迹的后半段计算碰撞也不会影响机器人的行驶。
   if(cfg_.robot.is_footprint_dynamic)
   {
     // Update footprint of the robot and minimum and maximum distance from the center of the robot to its footprint vertices.
@@ -425,23 +434,24 @@ void TebLocalPlannerROS::updateObstacleContainerWithCostmap()
   // Add costmap obstacles if desired
   if (cfg_.obstacles.include_costmap_obstacles)
   {
-    Eigen::Vector2d robot_orient = robot_pose_.orientationUnitVec();
+    Eigen::Vector2d robot_orient = robot_pose_.orientationUnitVec(); // 机器人姿态角的单位向量。
     
     for (unsigned int i=0; i<costmap_->getSizeInCellsX()-1; ++i)
     {
       for (unsigned int j=0; j<costmap_->getSizeInCellsY()-1; ++j)
       {
-        if (costmap_->getCost(i,j) == costmap_2d::LETHAL_OBSTACLE)
+        if (costmap_->getCost(i,j) == costmap_2d::LETHAL_OBSTACLE) // 只处理障碍物栅格，不处理膨胀和inscried栅格。
         {
           Eigen::Vector2d obs;
-          costmap_->mapToWorld(i,j,obs.coeffRef(0), obs.coeffRef(1));
+          costmap_->mapToWorld(i,j,obs.coeffRef(0), obs.coeffRef(1)); // 栅格坐标转换为planner坐标系下的世界坐标。
             
           // check if obstacle is interesting (e.g. not far behind the robot)
-          Eigen::Vector2d obs_dir = obs-robot_pose_.position();
+          // obs_dir.dot(robot_orient) < 0， 说明机器人朝向与机器人到障碍物的向量夹角为钝角，即障碍物在机器人的后方
+          Eigen::Vector2d obs_dir = obs-robot_pose_.position(); // 机器人到障碍物的向量
           if ( obs_dir.dot(robot_orient) < 0 && obs_dir.norm() > cfg_.obstacles.costmap_obstacles_behind_robot_dist  )
             continue;
             
-          obstacles_.push_back(ObstaclePtr(new PointObstacle(obs)));
+          obstacles_.push_back(ObstaclePtr(new PointObstacle(obs))); // TEB把ros代价地图的障碍物栅格都当作点状障碍物处理。
         }
       }
     }
@@ -489,7 +499,7 @@ void TebLocalPlannerROS::updateObstacleContainerWithCostmapConverter()
 
     // Set velocity, if obstacle is moving
     if(!obstacles_.empty())
-      obstacles_.back()->setCentroidVelocity(obstacles->obstacles[i].velocities, obstacles->obstacles[i].orientation);
+      obstacles_.back()->setCentroidVelocity(obstacles->obstacles[i].velocities, obstacles->obstacles[i].orientation); // 设置障碍物的运动速度和运动方向。
   }
 }
 
@@ -577,6 +587,7 @@ void TebLocalPlannerROS::updateViaPointsContainer(const std::vector<geometry_msg
 {
   via_points_.clear();
   
+  // 通过将参数global_plan_viapoint_sep设置为小于等于0来关闭规划轨迹经过waypoint的功能。
   if (min_separation<=0)
     return;
   
@@ -792,12 +803,14 @@ double TebLocalPlannerROS::estimateLocalGoalOrientation(const std::vector<geomet
   // check if we are near the global goal already
   if (current_goal_idx > n-moving_average_length-2)
   {
+    // 当前局部目标点已经是全局目标点了，此时两个目标点是完全一致的，取谁的姿态都可以。
     if (current_goal_idx >= n-1) // we've exactly reached the goal
     {
       return tf::getYaw(local_goal.getRotation());
     }
     else
     {
+      // 当前局部目标点接近全局目标点时，使用全局目标点的姿态作为局部目标点姿态以使机器人提前校正姿态。
       tf::Quaternion global_orientation;
       tf::quaternionMsgToTF(global_plan.back().pose.orientation, global_orientation);
       return  tf::getYaw(tf_plan_to_global.getRotation() *  global_orientation );
@@ -811,6 +824,7 @@ double TebLocalPlannerROS::estimateLocalGoalOrientation(const std::vector<geomet
   tf::Stamped<tf::Pose> tf_pose_k = local_goal;
   tf::Stamped<tf::Pose> tf_pose_kp1;
   
+  // 取从current_goal_idx到range_end之间的位姿进行平均值计算，平均值作为局部目标点的姿态。
   int range_end = current_goal_idx + moving_average_length;
   for (int i = current_goal_idx; i < range_end; ++i)
   {
@@ -886,6 +900,7 @@ void TebLocalPlannerROS::configureBackupModes(std::vector<geometry_msgs::PoseSta
 {
     ros::Time current_time = ros::Time::now();
     
+    // 如果允许缩小机器人规划的视野且局部目标点还没有指定，则将tansformed_plan的后半段截掉。
     // reduced horizon backup mode
     if (cfg_.recovery.shrink_horizon_backup && 
         goal_idx < (int)transformed_plan.size()-1 && // we do not reduce if the goal is already selected (because the orientation might change -> can introduce oscillations)
@@ -894,6 +909,7 @@ void TebLocalPlannerROS::configureBackupModes(std::vector<geometry_msgs::PoseSta
         ROS_INFO_COND(no_infeasible_plans_==1, "Activating reduced horizon backup mode for at least %.2f sec (infeasible trajectory detected).", cfg_.recovery.shrink_horizon_min_duration);
 
 
+        // 默认截掉50%,如果no_infeasible_plans_大于9次，则再截掉50%.
         // Shorten horizon if requested
         // reduce to 50 percent:
         int horizon_reduction = goal_idx/2;
@@ -920,7 +936,9 @@ void TebLocalPlannerROS::configureBackupModes(std::vector<geometry_msgs::PoseSta
     if (cfg_.recovery.oscillation_recovery)
     {
         double max_vel_theta;
-        double max_vel_current = last_cmd_.linear.x >= 0 ? cfg_.robot.max_vel_x : cfg_.robot.max_vel_x_backwards;
+        double max_vel_current = last_cmd_.linear.x >= 0 ? cfg_.robot.max_vel_x : cfg_.robot.max_vel_x_backwards; // 以上一规划周期的速度方向来选择最大速度。
+
+        // 根据前进速度和最小转弯半径计算角速度.TODO:那后退时的速度呢?
         if (cfg_.robot.min_turning_radius!=0 && max_vel_current>0)
             max_vel_theta = std::max( max_vel_current/std::abs(cfg_.robot.min_turning_radius),  cfg_.robot.max_vel_theta );
         else
@@ -932,6 +950,7 @@ void TebLocalPlannerROS::configureBackupModes(std::vector<geometry_msgs::PoseSta
         bool oscillating = failure_detector_.isOscillating();
         bool recently_oscillated = (ros::Time::now()-time_last_oscillation_).toSec() < cfg_.recovery.oscillation_recovery_min_duration; // check if we have already detected an oscillation recently
         
+        // 机器人处于震荡时，根据当前里程计速度的方向来设置规划器的偏好，使得规划器规划的轨迹尽可能保持与当前运动方向一致。
         if (oscillating)
         {
             if (!recently_oscillated)

@@ -108,6 +108,7 @@ typedef std::vector< Eigen::Vector2d, Eigen::aligned_allocator<Eigen::Vector2d> 
  *        However, we have not tested this mode intensively yet, so we keep
  *        the legacy fast mode as default until we finish our tests.
  */
+// 通过纯优化方法进行避障轨迹生成。
 class TebOptimalPlanner : public PlannerInterface
 {
 public:
@@ -401,7 +402,7 @@ public:
   bool isOptimized() const {return optimized_;};
 	
   /**
-   * @brief Compute the cost vector of a given optimization problen (hyper-graph must exist).
+   * @brief Compute the cost vector of a given optimization problem (hyper-graph must exist).
    * 
    * Use this method to obtain information about the current edge errors / costs (local cost functions). \n
    * The vector of cost values is composed according to the different edge types (time_optimal, obstacles, ...). \n

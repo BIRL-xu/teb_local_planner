@@ -210,7 +210,7 @@ public:
     */
   virtual double calculateDistance(const PoseSE2& current_pose, const Obstacle* obstacle) const
   {
-    return obstacle->getMinimumDistance(current_pose.position()) - radius_;
+    return obstacle->getMinimumDistance(current_pose.position()) - radius_;// 到机器人轮廓的的距离
   }
 
   /**
@@ -267,7 +267,7 @@ public:
   
   /**
     * @brief Default constructor of the abstract obstacle class
-    * @param front_offset shift the center of the front circle along the robot orientation starting from the center at the rear axis (in meters)
+    * @param front_offset shift the center of the front circle along the robot orientation starting from the center at the rear axis (in meters)，相对后轮轴中心的偏移量。
     * @param front_radius radius of the front circle
     * @param rear_offset shift the center of the rear circle along the opposite robot orientation starting from the center at the rear axis (in meters)
     * @param rear_radius radius of the front circle
@@ -299,9 +299,9 @@ public:
   virtual double calculateDistance(const PoseSE2& current_pose, const Obstacle* obstacle) const
   {
     Eigen::Vector2d dir = current_pose.orientationUnitVec();
-    double dist_front = obstacle->getMinimumDistance(current_pose.position() + front_offset_*dir) - front_radius_;
-    double dist_rear = obstacle->getMinimumDistance(current_pose.position() - rear_offset_*dir) - rear_radius_;
-    return std::min(dist_front, dist_rear);
+    double dist_front = obstacle->getMinimumDistance(current_pose.position() + front_offset_*dir) - front_radius_; // 将机器人中心向当前航向角的单位矢量方向平移front_offset_得到前面圆的圆心
+    double dist_rear = obstacle->getMinimumDistance(current_pose.position() - rear_offset_*dir) - rear_radius_; // 将机器人中心向当前航向角的单位矢量反方向平移rear_offset_得到后面圆的圆心
+    return std::min(dist_front, dist_rear); // 取两个圆离障碍物距离的较小者。
   }
 
   /**
@@ -364,9 +364,9 @@ public:
    */
   virtual double getInscribedRadius() 
   {
-      double min_longitudinal = std::min(rear_offset_ + rear_radius_, front_offset_ + front_radius_);
-      double min_lateral = std::min(rear_radius_, front_radius_);
-      return std::min(min_longitudinal, min_lateral);
+      double min_longitudinal = std::min(rear_offset_ + rear_radius_, front_offset_ + front_radius_); // 在纵向，两个圆离后轮轴中心最远的距离中较小者。
+      double min_lateral = std::min(rear_radius_, front_radius_); // 在横向，两个圆离后轮轴中心最远的距离中较小者。
+      return std::min(min_longitudinal, min_lateral); // 综合纵向和横向最小距离，取最小的。
   }
 
 private:
@@ -627,6 +627,7 @@ public:
 
   }
   
+  // 机器人中心到多边形边的最小距离即为内切圆半径。
   /**
    * @brief Compute the inscribed radius of the footprint model
    * @return inscribed radius
@@ -639,6 +640,7 @@ public:
      if (vertices_.size() <= 2)
         return 0.0;
 
+    // 计算中心到多边形每条边的最小距离
      for (int i = 0; i < (int)vertices_.size() - 1; ++i)
      {
         // compute distance from the robot center point to the first vertex

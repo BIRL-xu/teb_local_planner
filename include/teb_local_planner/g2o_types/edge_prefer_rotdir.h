@@ -71,7 +71,7 @@ public:
    */    
   EdgePreferRotDir() 
   {
-    _measurement = 1;
+    _measurement = 1; // 默认优先左转
   }
  
   /**
@@ -82,7 +82,7 @@ public:
     const VertexPose* conf1 = static_cast<const VertexPose*>(_vertices[0]);
     const VertexPose* conf2 = static_cast<const VertexPose*>(_vertices[1]);
     
-    _error[0] = penaltyBoundFromBelow( _measurement*g2o::normalize_theta(conf2->theta()-conf1->theta()) , 0, 0);
+    _error[0] = penaltyBoundFromBelow( _measurement*g2o::normalize_theta(conf2->theta()-conf1->theta()) , 0, 0); // 当theta2-theta1的符号与_measurement相反时，产生代价值，大小即为角度差的绝对值。
 
     ROS_ASSERT_MSG(std::isfinite(_error[0]), "EdgePreferRotDir::computeError() _error[0]=%f\n",_error[0]);
   }

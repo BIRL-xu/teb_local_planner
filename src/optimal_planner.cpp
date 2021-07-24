@@ -242,6 +242,7 @@ bool TebOptimalPlanner::plan(const std::vector<geometry_msgs::PoseStamped>& init
   } 
   else // warm start
   {
+    // 只有当当前目标点与当前teb的轨迹末端点的偏差在阈值内时才使用已有轨迹进行更新，即hot-starting，否则，基于参考路径重新初始化轨迹。
     PoseSE2 start_(initial_plan.front().pose);
     PoseSE2 goal_(initial_plan.back().pose);
     if (teb_.sizePoses()>0
@@ -314,7 +315,7 @@ bool TebOptimalPlanner::buildGraph(double weight_multiplier)
     ROS_WARN("Cannot build graph, because it is not empty. Call graphClear()!");
     return false;
   }
-  
+  // 必须按顺序添加
   // add TEB vertices
   AddTEBVertices();
   
@@ -396,7 +397,7 @@ void TebOptimalPlanner::clearGraph()
 }
 
 
-
+// 按顺序添加图顶点，包括位姿顶点和时间差顶点
 void TebOptimalPlanner::AddTEBVertices()
 {
   // add vertices to graph
@@ -404,11 +405,11 @@ void TebOptimalPlanner::AddTEBVertices()
   unsigned int id_counter = 0; // used for vertices ids
   for (int i=0; i<teb_.sizePoses(); ++i)
   {
-    teb_.PoseVertex(i)->setId(id_counter++);
+    teb_.PoseVertex(i)->setId(id_counter++); // 先用后加，[p0, p1,..., p(N-1)]
     optimizer_->addVertex(teb_.PoseVertex(i));
     if (teb_.sizeTimeDiffs()!=0 && i<teb_.sizeTimeDiffs())
     {
-      teb_.TimeDiffVertex(i)->setId(id_counter++);
+      teb_.TimeDiffVertex(i)->setId(id_counter++); // 每两个位姿对应一个dt，所以dt的序号总是,即[p0, dt0, p1, p2, dt1, p3, ..., p(N-2), dt(N-2), P(N)].
       optimizer_->addVertex(teb_.TimeDiffVertex(i));
     }
   } 
@@ -423,9 +424,12 @@ void TebOptimalPlanner::AddEdgesObstacles(double weight_multiplier)
   
   bool inflated = cfg_->obstacles.inflation_dist > cfg_->obstacles.min_obstacle_dist;
 
+  // 障碍物边的信息矩阵
+  // 非膨胀障碍物只有单一权重，即距离的权重
   Eigen::Matrix<double,1,1> information;
   information.fill(cfg_->optim.weight_obstacle * weight_multiplier);
   
+  // 膨胀的障碍物有两个权重分量，距离权重和膨胀权重。
   Eigen::Matrix<double,2,2> information_inflated;
   information_inflated(0,0) = cfg_->optim.weight_obstacle * weight_multiplier;
   information_inflated(1,1) = cfg_->optim.weight_inflation;
@@ -444,6 +448,9 @@ void TebOptimalPlanner::AddEdgesObstacles(double weight_multiplier)
       const Eigen::Vector2d pose_orient = teb_.Pose(i).orientationUnitVec();
       
       // iterate obstacles
+      // 查找与轨迹上除起点和目标点外的每个点干涉的障碍物，添加到relevant_obstacles容器中，并
+      // 查找不干涉但最近的左侧和右侧障碍物，并保存对应的距离值和障碍物。
+      // 通过位姿的单位向量和由位姿指向障碍物形心的向量之间的叉乘符号作障碍物在左侧还是右侧的判断。
       for (const ObstaclePtr& obst : *obstacles_)
       {
         // we handle dynamic obstacles differently below
@@ -454,42 +461,45 @@ void TebOptimalPlanner::AddEdgesObstacles(double weight_multiplier)
           double dist = robot_model_->calculateDistance(teb_.Pose(i), obst.get());
           
           // force considering obstacle if really close to the current pose
-        if (dist < cfg_->obstacles.min_obstacle_dist*cfg_->obstacles.obstacle_association_force_inclusion_factor)
-          {
-              relevant_obstacles.push_back(obst.get());
-              continue;
-          }
-          // cut-off distance
-          if (dist > cfg_->obstacles.min_obstacle_dist*cfg_->obstacles.obstacle_association_cutoff_factor)
+        if (dist < cfg_->obstacles.min_obstacle_dist*cfg_->obstacles.obstacle_association_force_inclusion_factor) // obstacle_association_force_inclusion_factor用于补偿障碍物检测的不确定性.
+        {
+            relevant_obstacles.push_back(obst.get()); // 该障碍物距离当前检测位姿很近，所以添加到关联障碍物容器中。
             continue;
-          
-          // determine side (left or right) and assign obstacle if closer than the previous one
-          if (cross2d(pose_orient, obst->getCentroid()) > 0) // left
-          {
-              if (dist < left_min_dist)
-              {
-                  left_min_dist = dist;
-                  left_obstacle = obst.get();
-              }
-          }
-          else
-          {
-              if (dist < right_min_dist)
-              {
-                  right_min_dist = dist;
-                  right_obstacle = obst.get();
-              }
-          }
+        }
+        // cut-off distance, 跳过距离太远的障碍物。
+        if (dist > cfg_->obstacles.min_obstacle_dist*cfg_->obstacles.obstacle_association_cutoff_factor)
+          continue;
+        
+        // determine side (left or right) and assign obstacle if closer than the previous one
+        // 通过向量叉乘的符号判断障碍物是在位姿的左侧还是右侧，但是障碍物向量不应该是从位姿指向障碍物形心吗，为什么直接使用了形心坐标?
+        // 应该是obst->getCentroid() - teb_.Pose(i) ??
+        if (cross2d(pose_orient, obst->getCentroid()) > 0) // left
+        {
+            if (dist < left_min_dist)
+            {
+                left_min_dist = dist;
+                left_obstacle = obst.get();
+            }
+        }
+        else // 叉乘结果为0时障碍物在正前方，归类为右侧。
+        {
+            if (dist < right_min_dist)
+            {
+                right_min_dist = dist;
+                right_obstacle = obst.get();
+            }
+        }
       }   
       
+      // 构建与轨迹点未干涉单离轨迹点最近的障碍物边，可能同时存在左边和右边的障碍物。
       // create obstacle edges
       if (left_obstacle)
       {
-            if (inflated)
+            if (inflated) 
             {
                 EdgeInflatedObstacle* dist_bandpt_obst = new EdgeInflatedObstacle;
-                dist_bandpt_obst->setVertex(0,teb_.PoseVertex(i));
-                dist_bandpt_obst->setInformation(information_inflated);
+                dist_bandpt_obst->setVertex(0,teb_.PoseVertex(i));                // 关联膨胀障碍边的第一个顶点
+                dist_bandpt_obst->setInformation(information_inflated);           // 设置边的信息矩阵，即权重。
                 dist_bandpt_obst->setParameters(*cfg_, robot_model_.get(), left_obstacle);
                 optimizer_->addEdge(dist_bandpt_obst);
             }
@@ -523,6 +533,7 @@ void TebOptimalPlanner::AddEdgesObstacles(double weight_multiplier)
             }   
       }
       
+      // 构建与轨迹点干涉的障碍物边。
       for (const Obstacle* obst : relevant_obstacles)
       {
             if (inflated)
@@ -546,7 +557,9 @@ void TebOptimalPlanner::AddEdgesObstacles(double weight_multiplier)
         
 }
 
-
+/**
+ * 根据配置参数obstacle_poses_affected指定的数量查找受每个障碍物影响的轨迹点(除起点和目标点外，因为它们是固定的)，将它们设为对应障碍物边的顶点。
+ * **/
 void TebOptimalPlanner::AddEdgesObstaclesLegacy(double weight_multiplier)
 {
   if (cfg_->optim.weight_obstacle==0 || weight_multiplier==0 || obstacles_==nullptr)
@@ -567,8 +580,10 @@ void TebOptimalPlanner::AddEdgesObstaclesLegacy(double weight_multiplier)
     if (cfg_->obstacles.include_dynamic_obstacles && (*obst)->isDynamic()) // we handle dynamic obstacles differently below
       continue; 
     
-    int index;
+    int index; // 与障碍物最近的轨迹点的序号，用于将该轨迹点关联为障碍物边的顶点。
     
+    // 计算与障碍物最近的轨迹点的序号。
+    // 如果配置文件中的受障碍物影响的位姿数比当前轨迹点大时，强制取中间轨迹点作为障碍物边的顶点。
     if (cfg_->obstacles.obstacle_poses_affected >= teb_.sizePoses())
       index =  teb_.sizePoses() / 2;
     else
@@ -596,6 +611,8 @@ void TebOptimalPlanner::AddEdgesObstaclesLegacy(double weight_multiplier)
         optimizer_->addEdge(dist_bandpt_obst);
     }
 
+    // 以index为终点，向前后各寻找obstacle_poses_affected/2个点，包含index这个点，刚好obstacle_poses_affected个轨迹点。
+    // 将这些轨迹点都关联到同一个障碍物边上。
     for (int neighbourIdx=0; neighbourIdx < floor(cfg_->obstacles.obstacle_poses_affected/2); neighbourIdx++)
     {
       if (index+neighbourIdx < teb_.sizePoses())
@@ -603,7 +620,7 @@ void TebOptimalPlanner::AddEdgesObstaclesLegacy(double weight_multiplier)
             if (inflated)
             {
                 EdgeInflatedObstacle* dist_bandpt_obst_n_r = new EdgeInflatedObstacle;
-                dist_bandpt_obst_n_r->setVertex(0,teb_.PoseVertex(index+neighbourIdx));
+                dist_bandpt_obst_n_r->setVertex(0,teb_.PoseVertex(index+neighbourIdx)); // neighbourIdx从0开始，不是与上面的顶点重复了吗？
                 dist_bandpt_obst_n_r->setInformation(information_inflated);
                 dist_bandpt_obst_n_r->setParameters(*cfg_, robot_model_.get(), obst->get());
                 optimizer_->addEdge(dist_bandpt_obst_n_r);
@@ -641,7 +658,9 @@ void TebOptimalPlanner::AddEdgesObstaclesLegacy(double weight_multiplier)
   }
 }
 
-
+/**
+ * 将动态障碍物与每个轨迹点作关联，而不是寻找最近的轨迹点。
+ * **/
 void TebOptimalPlanner::AddEdgesDynamicObstacles(double weight_multiplier)
 {
   if (cfg_->optim.weight_obstacle==0 || weight_multiplier==0 || obstacles_==NULL )
@@ -658,15 +677,15 @@ void TebOptimalPlanner::AddEdgesDynamicObstacles(double weight_multiplier)
       continue;
 
     // Skip first and last pose, as they are fixed
-    double time = teb_.TimeDiff(0);
+    double time = teb_.TimeDiff(0); // 机器人运动下一个位姿所需的时间。
     for (int i=1; i < teb_.sizePoses() - 1; ++i)
     {
-      EdgeDynamicObstacle* dynobst_edge = new EdgeDynamicObstacle(time);
+      EdgeDynamicObstacle* dynobst_edge = new EdgeDynamicObstacle(time); // 障碍物预估运动时间与机器人运动时间一致，可以估计在特定时间机器人和障碍物是否干涉。
       dynobst_edge->setVertex(0,teb_.PoseVertex(i));
       dynobst_edge->setInformation(information);
       dynobst_edge->setParameters(*cfg_, robot_model_.get(), obst->get());
       optimizer_->addEdge(dynobst_edge);
-      time += teb_.TimeDiff(i); // we do not need to check the time diff bounds, since we iterate to "< sizePoses()-1".
+      time += teb_.TimeDiff(i); // 机器人到第i个位姿所需的时间.
     }
   }
 }
@@ -685,14 +704,16 @@ void TebOptimalPlanner::AddEdgesViaPoints()
   for (ViaPointContainer::const_iterator vp_it = via_points_->begin(); vp_it != via_points_->end(); ++vp_it)
   {
     
-    int index = teb_.findClosestTrajectoryPose(*vp_it, NULL, start_pose_idx);
+    int index = teb_.findClosestTrajectoryPose(*vp_it, NULL, start_pose_idx); // 如果via_points_ordered为false,则每次都便利整条轨迹，包括起点和终点。反之，从上一次最近点的下下个点开始便利。
     if (cfg_->trajectory.via_points_ordered)
       start_pose_idx = index+2; // skip a point to have a DOF inbetween for further via-points
      
     // check if point conicides with goal or is located behind it
+    // 如果找出的最近轨迹点是目标点，强制设为它的前一个点，因为目标点是固定的，而前一个点在优化时可调整位置。
     if ( index > n-2 ) 
       index = n-2; // set to a pose before the goal, since we can move it away!
     // check if point coincides with start or is located before it
+    // 同样地，如果找出的最近点是起点，也强制设为第二个点。
     if ( index < 1)
     {
       if (cfg_->trajectory.via_points_ordered)
@@ -716,6 +737,9 @@ void TebOptimalPlanner::AddEdgesViaPoints()
   }
 }
 
+/**
+ * 构建速度边，每条速度边连接3个顶点，分别是p(k), p(k+1), dt(k).
+ * **/
 void TebOptimalPlanner::AddEdgesVelocity()
 {
   if (cfg_->robot.max_vel_y == 0) // non-holonomic robot
@@ -782,6 +806,9 @@ void TebOptimalPlanner::AddEdgesAcceleration()
     information(1,1) = cfg_->optim.weight_acc_lim_theta;
     
     // check if an initial velocity should be taken into accound
+    // 起始加速度边关联的顶点是第一段轨迹，即p0,p1和dt(0)，这三个顶点可以得到轨迹速度。
+    // 而这条边的观测是设置的初始速度，从而可用轨迹速度和初始速度在dt时间内速度差设计加速度约束，
+    // 即将第一段轨迹的速度尽可能地提速到初始速度，通过信息矩阵information来在轨迹速度和初始速度之间作调整。
     if (vel_start_.first)
     {
       EdgeAccelerationStart* acceleration_edge = new EdgeAccelerationStart;
@@ -794,6 +821,8 @@ void TebOptimalPlanner::AddEdgesAcceleration()
       optimizer_->addEdge(acceleration_edge);
     }
 
+    // 中间段轨迹的加速度约束关联5格顶点，即3个连续位姿，2个时间差。
+    // 3个连续位姿和2格时间差可计算对应两端轨迹的速度，再通过两个速度计算该两段轨迹的加速度。
     // now add the usual acceleration edge for each tuple of three teb poses
     for (int i=0; i < n - 2; ++i)
     {
@@ -808,6 +837,7 @@ void TebOptimalPlanner::AddEdgesAcceleration()
       optimizer_->addEdge(acceleration_edge);
     }
     
+    // 最后一段加速度约束，和起始段加速度约束起始是一样的.
     // check if a goal velocity should be taken into accound
     if (vel_goal_.first)
     {
@@ -923,7 +953,7 @@ void TebOptimalPlanner::AddEdgesKinematicsDiffDrive()
   information_kinematics(0, 0) = cfg_->optim.weight_kinematics_nh;
   information_kinematics(1, 1) = cfg_->optim.weight_kinematics_forward_drive;
   
-  for (int i=0; i < teb_.sizePoses()-1; i++) // ignore twiced start only
+  for (int i=0; i < teb_.sizePoses()-1; i++) // ignore twiced start only， 忽略了最后一个点
   {
     EdgeKinematicsDiffDrive* kinematics_edge = new EdgeKinematicsDiffDrive;
     kinematics_edge->setVertex(0,teb_.PoseVertex(i));
@@ -956,7 +986,9 @@ void TebOptimalPlanner::AddEdgesKinematicsCarlike()
   }  
 }
 
-
+/**
+ * 只对前3个轨迹点添加了优先旋转方向约束。
+ * **/
 void TebOptimalPlanner::AddEdgesPreferRotDir()
 {
   //TODO(roesmann): Note, these edges can result in odd predictions, in particular
@@ -995,6 +1027,7 @@ void TebOptimalPlanner::AddEdgesPreferRotDir()
   }
 }
 
+// 计算每条边的代价值总和。
 void TebOptimalPlanner::computeCurrentCost(double obst_cost_scale, double viapoint_cost_scale, bool alternative_time_cost)
 { 
   // check if graph is empty/exist  -> important if function is called between buildGraph and optimizeGraph/clearGraph
@@ -1050,7 +1083,9 @@ void TebOptimalPlanner::computeCurrentCost(double obst_cost_scale, double viapoi
     clearGraph();
 }
 
-
+/**
+ * 根据位姿差和时间差计算速度。
+ * **/
 void TebOptimalPlanner::extractVelocity(const PoseSE2& pose1, const PoseSE2& pose2, double dt, double& vx, double& vy, double& omega) const
 {
   if (dt == 0)
@@ -1101,6 +1136,7 @@ bool TebOptimalPlanner::getVelocityCommand(double& vx, double& vy, double& omega
   }
   look_ahead_poses = std::max(1, std::min(look_ahead_poses, teb_.sizePoses() - 1));
   double dt = 0.0;
+  // 指定前瞻位姿数量的时间差累积。
   for(int counter = 0; counter < look_ahead_poses; ++counter)
   {
     dt += teb_.TimeDiff(counter);
@@ -1118,12 +1154,14 @@ bool TebOptimalPlanner::getVelocityCommand(double& vx, double& vy, double& omega
     omega = 0;
     return false;
   }
-	  
+	
+  // 通过轨迹起点和指定的前瞻点之间的位姿差和时间差计算速度。
   // Get velocity from the first two configurations
   extractVelocity(teb_.Pose(0), teb_.Pose(look_ahead_poses), dt, vx, vy, omega);
   return true;
 }
 
+// 通过相邻位姿差计算和对应的时间差计算速度。
 void TebOptimalPlanner::getVelocityProfile(std::vector<geometry_msgs::Twist>& velocity_profile) const
 {
   int n = teb_.sizePoses();
@@ -1214,6 +1252,7 @@ bool TebOptimalPlanner::isTrajectoryFeasible(base_local_planner::CostmapModel* c
   {           
     if ( costmap_model->footprintCost(teb().Pose(i).x(), teb().Pose(i).y(), teb().Pose(i).theta(), footprint_spec, inscribed_radius, circumscribed_radius) < 0 )
     {
+      // 发生碰撞
       if (visualization_)
       {
         visualization_->publishInfeasibleRobotPose(teb().Pose(i), *robot_model_);
@@ -1223,6 +1262,8 @@ bool TebOptimalPlanner::isTrajectoryFeasible(base_local_planner::CostmapModel* c
     // Checks if the distance between two poses is higher than the robot radius or the orientation diff is bigger than the specified threshold
     // and interpolates in that case.
     // (if obstacles are pushing two consecutive poses away, the center between two consecutive poses might coincide with the obstacle ;-)!
+    // 对两个距离和角度差太大的相邻位姿进行线性插值，并对插值点进行碰撞检测。
+    // 插值点作碰撞检测用，不会插入最终轨迹中。
     if (i<look_ahead_idx)
     {
       double delta_rot = g2o::normalize_theta(g2o::normalize_theta(teb().Pose(i+1).theta()) -

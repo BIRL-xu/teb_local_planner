@@ -95,7 +95,7 @@ public:
     ROS_ASSERT_MSG(cfg_ && _measurement && robot_model_, "You must call setTebConfig(), setObstacle() and setRobotModel() on EdgeDynamicObstacle()");
     const VertexPose* bandpt = static_cast<const VertexPose*>(_vertices[0]);
     
-    double dist = robot_model_->estimateSpatioTemporalDistance(bandpt->pose(), _measurement, t_);
+    double dist = robot_model_->estimateSpatioTemporalDistance(bandpt->pose(), _measurement, t_); // bandpt->pose()即为机器人当前位姿
 
     _error[0] = penaltyBoundFromBelow(dist, cfg_->obstacles.min_obstacle_dist, cfg_->optim.penalty_epsilon);
     _error[1] = penaltyBoundFromBelow(dist, cfg_->obstacles.dynamic_obstacle_inflation_dist, 0.0);

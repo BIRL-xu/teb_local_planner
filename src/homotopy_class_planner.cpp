@@ -65,6 +65,8 @@ void HomotopyClassPlanner::initialize(const TebConfig& cfg, ObstContainer* obsta
   via_points_ = via_points;
   robot_model_ = robot_model;
 
+  // 支持简单场景和复杂场景下的搜索图构建方法。
+  // 简单场景直接用在障碍物两侧生成关键点的方法构建图，而复杂场景则使用PRM构建图。
   if (cfg_->hcp.simple_exploration)
     graph_search_ = boost::shared_ptr<GraphSearchInterface>(new lrKeyPointGraph(*cfg_, this));
   else
@@ -82,7 +84,8 @@ void HomotopyClassPlanner::setVisualization(TebVisualizationPtr visualization)
 }
 
 
-
+// 更新初始轨迹,并将起始点和目标点转换为PoseSE2类型，最终调用PoseSE2版本的plan()函数进行路径规划。
+// 只取用起点和目标点用于生成PRM图。
 bool HomotopyClassPlanner::plan(const std::vector<geometry_msgs::PoseStamped>& initial_plan, const geometry_msgs::Twist* start_vel, bool free_goal_vel)
 {
   ROS_ASSERT_MSG(initialized_, "Call initialize() first.");
@@ -96,7 +99,7 @@ bool HomotopyClassPlanner::plan(const std::vector<geometry_msgs::PoseStamped>& i
   return plan(start, goal, start_vel, free_goal_vel);
 }
 
-
+// 更新初始轨迹,并将起始点和目标点转换为PoseSE2类型，最终调用PoseSE2版本的plan()函数进行路径规划。
 bool HomotopyClassPlanner::plan(const tf::Pose& start, const tf::Pose& goal, const geometry_msgs::Twist* start_vel, bool free_goal_vel)
 {
   ROS_ASSERT_MSG(initialized_, "Call initialize() first.");
@@ -105,12 +108,18 @@ bool HomotopyClassPlanner::plan(const tf::Pose& start, const tf::Pose& goal, con
   return plan(start_pose, goal_pose, start_vel, free_goal_vel);
 }
 
+// 完整地路径规划流程:
+// 1.热启动，即更新上一次规划得到的备选轨迹
+// 2.搜索新的Homotopy类型及它的那条路径代表
+// 3.将waypoint与轨迹关联
+// 4.并行优化所有轨迹
+// 5.筛选最优轨迹。
 bool HomotopyClassPlanner::plan(const PoseSE2& start, const PoseSE2& goal, const geometry_msgs::Twist* start_vel, bool free_goal_vel)
 {
   ROS_ASSERT_MSG(initialized_, "Call initialize() first.");
 
   // Update old TEBs with new start, goal and velocity
-  updateAllTEBs(&start, &goal, start_vel);
+  updateAllTEBs(&start, &goal, start_vel); // 热启动
 
   // Init new TEBs based on newly explored homotopy classes
   exploreEquivalenceClassesAndInitTebs(start, goal, cfg_->obstacles.min_obstacle_dist, start_vel);
@@ -175,7 +184,7 @@ void HomotopyClassPlanner::visualize()
 }
 
 
-
+// 将传入的类型与已存在的所有类型比较，判断该类型是否已经存在.如果已存在，返回true，否则，返回false。
 bool HomotopyClassPlanner::hasEquivalenceClass(const EquivalenceClassPtr& eq_class) const
 {
   // iterate existing h-signatures and check if there is an existing H-Signature similar the candidate
@@ -206,15 +215,24 @@ bool HomotopyClassPlanner::addEquivalenceClassIfNew(const EquivalenceClassPtr& e
   return true;
 }
 
-
+/**
+ * 调用HSignature类的函数计算历史备选轨迹在当前规划周期下的新H标签，如果是新标签则将它们添加到H标签队列中，不是新标签则删除该轨迹。
+ * 因为机器人在运动，障碍物环境也可能在变化，所有历史备选轨迹的H标签也可能变化，所以需要重新计算。
+ * 函数一开始就将历史H标签清空了，便于历史备选轨迹依据新标签进行处理而不受历史标签的影响。
+ * 
+*/
 void HomotopyClassPlanner::renewAndAnalyzeOldTebs(bool delete_detours)
 {
   // clear old h-signatures (since they could be changed due to new obstacle positions.
   equivalence_classes_.clear();
 
   // Adding the equivalence class of the latest best_teb_ first
+  // 找出最新的最优轨迹在备选轨迹队列中的迭代器。
   TebOptPlannerContainer::iterator it_best_teb = best_teb_ ? std::find(tebs_.begin(), tebs_.end(), best_teb_) : tebs_.end();
   bool has_best_teb = it_best_teb != tebs_.end();
+  // 计算上一次最优轨迹的H标签，并将其添加到标签队列中。
+  // 因equivalence_classes_已被清空，不存在历史H标签，所以这里的addEquivalenceClassIfNew()函数肯定会
+  // 将历史最优轨迹的新H标签添加到标签队列中。
   if (has_best_teb)
   {
     std::iter_swap(tebs_.begin(), it_best_teb);  // Putting the last best teb at the beginning of the container
@@ -227,7 +245,7 @@ void HomotopyClassPlanner::renewAndAnalyzeOldTebs(bool delete_detours)
 //   TebCandidateType teb_candidates;
 
   // get new homotopy classes and delete multiple TEBs per homotopy class. Skips the best teb if available (added before).
-  TebOptPlannerContainer::iterator it_teb = has_best_teb ? std::next(tebs_.begin(), 1) : tebs_.begin();
+  TebOptPlannerContainer::iterator it_teb = has_best_teb ? std::next(tebs_.begin(), 1) : tebs_.begin(); // 如果历史最优轨迹存在则跳过，因为上面已经添加过标签了。
   while(it_teb != tebs_.end())
   {
     // calculate equivalence class for the current candidate
@@ -239,9 +257,9 @@ void HomotopyClassPlanner::renewAndAnalyzeOldTebs(bool delete_detours)
     // WORKAROUND until the commented code below works
     // Here we do not compare cost values. Just first come first serve...
     bool new_flag = addEquivalenceClassIfNew(equivalence_class);
-    if (!new_flag)
+    if (!new_flag) 
     {
-      it_teb = tebs_.erase(it_teb);
+      it_teb = tebs_.erase(it_teb); // 删除该轨迹，因为已存在同类型的轨迹。
       continue;
     }
 
@@ -401,10 +419,14 @@ TebOptimalPlannerPtr HomotopyClassPlanner::addAndInitNewTeb(const std::vector<ge
   return TebOptimalPlannerPtr();
 }
 
+// 这个函数实现了论文中所说的热启动(hot-start)，其实就干了两件事：
+// 1.检查已有备选轨迹的目标点和当前目标点是否相差太大，太大则不使用热启动功能。
+// 2.相差不大时则根据当前起点和目标点对已有备选轨迹进行修剪，并重设起点速度。
 void HomotopyClassPlanner::updateAllTEBs(const PoseSE2* start, const PoseSE2* goal, const geometry_msgs::Twist* start_velocity)
 {
   // If new goal is too far away, clear all existing trajectories to let them reinitialize later.
   // Since all Tebs are sharing the same fixed goal pose, just take the first candidate:
+  // 就是如果之前规划的那些备选轨迹的目标点与当前目标点的位置或姿态之间的变化量超过阈值，则不再使用这些轨迹进行热启动了，而是这个规划周期完全重新规划。
   if (!tebs_.empty()
       && ((goal->position() - tebs_.front()->teb().BackPose().position()).norm() >= cfg_->trajectory.force_reinit_new_goal_dist
         || fabs(g2o::normalize_theta(goal->theta() - tebs_.front()->teb().BackPose().theta())) >= cfg_->trajectory.force_reinit_new_goal_angular))
@@ -415,6 +437,7 @@ void HomotopyClassPlanner::updateAllTEBs(const PoseSE2* start, const PoseSE2* go
   }
 
   // hot-start from previous solutions
+  // 热启动即根据当前起点和目标点对之前的备选轨迹进行剪裁，并重新设置起点的速度。
   for (TebOptPlannerContainer::iterator it_teb = tebs_.begin(); it_teb != tebs_.end(); ++it_teb)
   {
     it_teb->get()->teb().updateAndPruneTEB(*start, *goal);
@@ -702,6 +725,7 @@ void HomotopyClassPlanner::deletePlansDetouringBackwards(const double orient_thr
   double best_plan_duration = std::max(best_teb_->teb().getSumOfAllTimeDiffs(), 1.0);
   if(!computeStartOrientation(best_teb_, len_orientation_vector, current_movement_orientation))
     return;  // The plan is shorter than len_orientation_vector
+    
   for(auto it_teb = tebs_.begin(); it_teb != tebs_.end();)
   {
     if(*it_teb == best_teb_)  // The current plan should not be considered a detour
@@ -743,6 +767,9 @@ void HomotopyClassPlanner::deletePlansDetouringBackwards(const double orient_thr
   }
 }
 
+/**
+ * 找出plan中距离起点的距离刚大于距离阈值len_orientation_vector的位姿，计算起点和该位姿的直线斜率角作为该轨迹的起始航向。
+*/
 bool HomotopyClassPlanner::computeStartOrientation(const TebOptimalPlannerPtr plan, const double len_orientation_vector,
   double& orientation)
 {

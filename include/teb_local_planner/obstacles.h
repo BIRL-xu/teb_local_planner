@@ -335,6 +335,7 @@ public:
   }
   
   
+  // 通过障碍物在线段上的投影点来判断是否发生干涉。
   // implements checkLineIntersection() of the base class
   virtual bool checkLineIntersection(const Eigen::Vector2d& line_start, const Eigen::Vector2d& line_end, double min_dist=0) const
   {   
@@ -353,13 +354,14 @@ public:
       return checkCollision(nearest_point, min_dist);
   }
 
-  
+  // 计算障碍物与参考点之间的距离。
   // implements getMinimumDistance() of the base class
   virtual double getMinimumDistance(const Eigen::Vector2d& position) const
   {
     return (position-pos_).norm();
   }
   
+  // 计算障碍物到线段的距离
   // implements getMinimumDistance() of the base class
   virtual double getMinimumDistance(const Eigen::Vector2d& line_start, const Eigen::Vector2d& line_end) const
   {
@@ -372,12 +374,14 @@ public:
     return distance_point_to_polygon_2d(pos_, polygon);
   }
   
+  // 获取离参考点最近的障碍物点坐标，点状障碍物当然就是它自身的坐标。
   // implements getMinimumDistanceVec() of the base class
   virtual Eigen::Vector2d getClosestPoint(const Eigen::Vector2d& position) const
   {
     return pos_;
   }
   
+  // 计算障碍物以恒定速度运动时间t后的位置与参考位置position之间的距离。
   // implements getMinimumSpatioTemporalDistance() of the base class
   virtual double getMinimumSpatioTemporalDistance(const Eigen::Vector2d& position, double t) const
   {
@@ -396,6 +400,7 @@ public:
     return distance_point_to_polygon_2d(pos_ + t*centroid_velocity_, polygon);
   }
 
+  // 点状障碍物的形心是它自身
   // implements predictCentroidConstantVelocity() of the base class
   virtual void predictCentroidConstantVelocity(double t, Eigen::Ref<Eigen::Vector2d> position) const
   {
@@ -479,6 +484,7 @@ public:
   }
 
 
+  // 障碍物的圆心在线段上的投影点是否与障碍物干涉
   // implements checkLineIntersection() of the base class
   virtual bool checkLineIntersection(const Eigen::Vector2d& line_start, const Eigen::Vector2d& line_end, double min_dist=0) const
   {
@@ -497,7 +503,7 @@ public:
       return checkCollision(nearest_point, min_dist);
   }
 
-
+  // 障碍物圆心到参考位置的距离减去半径
   // implements getMinimumDistance() of the base class
   virtual double getMinimumDistance(const Eigen::Vector2d& position) const
   {
@@ -516,6 +522,7 @@ public:
     return distance_point_to_polygon_2d(pos_, polygon) - radius_;
   }
 
+  // 离参考位置最近的障碍物点是：障碍物圆心和参考点的连线与障碍物圆的交点。
   // implements getMinimumDistanceVec() of the base class
   virtual Eigen::Vector2d getClosestPoint(const Eigen::Vector2d& position) const
   {
@@ -725,7 +732,7 @@ public:
   }
   
 protected:
-  void calcCentroid()	{	centroid_ = 0.5*(start_ + end_); }
+  void calcCentroid()	{	centroid_ = 0.5*(start_ + end_); } // 线段的中点即为形心
   
 private:
 	Eigen::Vector2d start_;
@@ -784,6 +791,7 @@ public:
       if (noVertices()==2)
         return getMinimumDistance(point) <= min_dist;
     
+      // 判断点是否在多边形内部或边上
       // check if point is in the interior of the polygon
       // point in polygon test - raycasting (http://www.ecse.rpi.edu/Homepages/wrf/Research/Short_Notes/pnpoly.html)
       // using the following algorithm we may obtain false negatives on edge-cases, but that's ok for our purposes	

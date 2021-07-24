@@ -83,7 +83,8 @@ public:
     ROS_ASSERT_MSG(cfg_ && _measurement, "You must call setTebConfig(), setViaPoint() on EdgeViaPoint()");
     const VertexPose* bandpt = static_cast<const VertexPose*>(_vertices[0]);
 
-    _error[0] = (bandpt->position() - *_measurement).norm();
+    // 机器人位姿到waypoint的距离。
+    _error[0] = (bandpt->position() - *_measurement).norm(); // _error变量是从父类继承过来的，所以直接赋值即可，不用实现虚函数。
 
     ROS_ASSERT_MSG(std::isfinite(_error[0]), "EdgeViaPoint::computeError() _error[0]=%f\n",_error[0]);
   }

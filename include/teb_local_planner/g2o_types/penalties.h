@@ -116,6 +116,7 @@ inline double penaltyBoundFromBelow(const double& var, const double& a,const dou
   }
 }
 
+// -a < x < a的penaltyBoundToInterval()代价值的一阶导
 /**
  * @brief Derivative of the linear penalty function for bounding \c var to the interval \f$ -a < var < a \f$
  * @param var The scalar that should be bounded
@@ -126,7 +127,7 @@ inline double penaltyBoundFromBelow(const double& var, const double& a,const dou
  */
 inline double penaltyBoundToIntervalDerivative(const double& var,const double& a, const double& epsilon)
 {
-  if (var < -a+epsilon)
+  if (var < -a+epsilon) //第61行， f(x) = -x-(a-epsilon) --> df/dx = -1
   {
     return -1;
   }
@@ -136,7 +137,7 @@ inline double penaltyBoundToIntervalDerivative(const double& var,const double& a
   }
   else
   {
-    return 1;		
+    return 1;		// 第69行，f(x) = x-(a-epsilon) --> df/dx = 1
   }
 }
 

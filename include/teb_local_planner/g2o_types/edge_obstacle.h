@@ -90,7 +90,7 @@ public:
     double dist = robot_model_->calculateDistance(bandpt->pose(), _measurement);
 
     // Original obstacle cost.
-    _error[0] = penaltyBoundFromBelow(dist, cfg_->obstacles.min_obstacle_dist, cfg_->optim.penalty_epsilon);
+    _error[0] = penaltyBoundFromBelow(dist, cfg_->obstacles.min_obstacle_dist, cfg_->optim.penalty_epsilon); // 顶点到障碍物距离的代价值。
 
     if (cfg_->optim.obstacle_cost_exponent != 1.0 && cfg_->obstacles.min_obstacle_dist > 0.0)
     {

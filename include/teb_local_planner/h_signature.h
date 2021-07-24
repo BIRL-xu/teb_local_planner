@@ -109,22 +109,23 @@ public:
         // paper proposes a+b=N-1 && |a-b|<=1, 1...N obstacles
         int m = std::max( (int)obstacles->size()-1, 5 );  // for only a few obstacles we need a min threshold in order to get significantly high H-Signatures
 
-        int a = (int) std::ceil(double(m)/2.0);
-        int b = m-a;
+        int a = (int) std::ceil(double(m)/2.0); // m的前半段，如9/2 = 4.5, a = 4
+        int b = m-a; // m的后半段, b = 9-4 = 5
 
         std::advance(path_end, -1); // reduce path_end by 1 (since we check line segments between those path points
 
+        // 构造一个包括起点和目标点的矩形
         typedef std::complex<long double> cplx;
         // guess map size (only a really really coarse guess is required
         // use distance from start to goal as distance to each direction
         // TODO: one could move the map determination outside this function, since it remains constant for the whole planning interval
-        cplx start = fun_cplx_point(*path_start);
+        cplx start = fun_cplx_point(*path_start); // 通过坐标构造复数，即x+y*i. 
         cplx end = fun_cplx_point(*path_end); // path_end points to the last point now after calling std::advance before
         cplx delta = end-start;
-        cplx normal(-delta.imag(), delta.real());
+        cplx normal(-delta.imag(), delta.real()); // 正交复数
         cplx map_bottom_left;
         cplx map_top_right;
-        if (std::abs(delta) < 3.0)
+        if (std::abs(delta) < 3.0) // std::abs(x+y*i) = sqrt(x^2 + y^2)，即复数的模数。
         { // set minimum bound on distance (we do not want to have numerical instabilities) and 3.0 performs fine...
             map_bottom_left = start + cplx(0, -3);
             map_top_right = start + cplx(3, 3);
@@ -142,6 +143,7 @@ public:
         // iterate path
         while(path_start != path_end)
         {
+            // 每次遍历路径两个点，即[0, 1]，[2, 3]
             cplx z1 = fun_cplx_point(*path_start);
             cplx z2 = fun_cplx_point(*boost::next(path_start));
 

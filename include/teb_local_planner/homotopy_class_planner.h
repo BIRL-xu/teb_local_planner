@@ -67,6 +67,7 @@
 namespace teb_local_planner
 {
 
+// 第一个参数是实部的值，第二个部分是虚部的值
 //!< Inline function used for calculateHSignature() in combination with VertexPose pointers
 inline std::complex<long double> getCplxFromVertexPosePtr(const VertexPose* pose)
 {
@@ -293,13 +294,14 @@ public:
    * @param goal_orientation Orientation of the last pose of the trajectory (optional, otherwise use goal heading)
    * @param start_velocity start velocity (optional)
    * @tparam BidirIter Bidirectional iterator type
-   * @tparam Fun unyary function that transforms the dereferenced iterator into an Eigen::Vector2d
+   * @tparam Fun unyary function that transforms the dereferenced iterator into an Eigen::Vector2d, 用于将被间接引用的迭代符转换为Eigen::Vector2d的一元函数。
    * @return Shared pointer to the newly created teb optimal planner
    */
   template<typename BidirIter, typename Fun>
   TebOptimalPlannerPtr addAndInitNewTeb(BidirIter path_start, BidirIter path_end, Fun fun_position, double start_orientation, double goal_orientation, const geometry_msgs::Twist* start_velocity);
 
   /**
+   * 新的Homology类型的路径直接使用起点到目标点的直线段进行初始化.
    * @brief Add a new Teb to the internal trajectory container, if this teb constitutes a new equivalence class. Initialize it with a simple straight line between a given start and goal
    * @param start start pose
    * @param goal goal pose
@@ -403,6 +405,7 @@ public:
   virtual void computeCurrentCost(std::vector<double>& cost, double obst_cost_scale=1.0, double viapoint_cost_scale=1.0, bool alternative_time_cost=false);
 
   /**
+   * 虚数的实部和虚部都小于阈值才认为两个标签相似。
    * @brief Check if two h-signatures are similar (w.r.t. a certain threshold)
    * @param h1 first h-signature
    * @param h2 second h-signature
@@ -469,7 +472,7 @@ public:
   /**
    * @brief Internal helper function that adds a new equivalence class to the list of known classes only if it is unique.
    * @param eq_class equivalence class that should be tested
-   * @param lock if \c true, exclude the H-signature from deletion.
+   * @param lock if \c true, exclude the H-signature from deletion.禁止删除该标签。
    * @return \c true if the h-signature was added and no duplicate was found, \c false otherwise
    */
   bool addEquivalenceClassIfNew(const EquivalenceClassPtr& eq_class, bool lock=false);
@@ -495,6 +498,8 @@ protected:
 
 
   /**
+   * 在新的规划周期开始时，删除上一步已优化轨迹的H标签，将它们从已知H标签队列中释放出来参与当前周期的优化。在新规划周期中会为它们重新计算H标签，并重新加入到已知H标签的容器中。
+   * 这样就实现了对已优化轨迹的重复利用，而不用从新再规划这些位置的轨迹，实现所谓的热启动!(Hot-starting).
    * @brief Renew all found h-signatures for the new planning step based on existing TEBs. Optionally detours can be discarded.
    *
    * Calling this method in each new planning interval is really important.
@@ -506,6 +511,8 @@ protected:
   void renewAndAnalyzeOldTebs(bool delete_detours);
 
   /**
+   * 当all_trajectories为真时，所有的候选轨迹都会往全局参考轨迹上靠，否则只有与全局参考轨迹属于同Homlogy类型的那条轨迹才会靠近参考轨迹,其它类的参考轨迹的
+   * 经过点将被删除。
    * @brief Associate trajectories with via-points
    *
    * If \c all_trajectories is true, all trajectory candidates are connected with the set of via_points,

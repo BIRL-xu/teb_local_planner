@@ -50,7 +50,7 @@ void PolygonObstacle::fixPolygonClosure()
   if (vertices_.size()<2)
     return;
   
-  if (vertices_.front().isApprox(vertices_.back()))
+  if (vertices_.front().isApprox(vertices_.back())) // 如果第一个点和最后一个点非常接近，剔除最后一个点。
     vertices_.pop_back();
 }
 

@@ -97,6 +97,7 @@ public:
     _error[0] = fabs( ( cos(conf1->theta())+cos(conf2->theta()) ) * deltaS[1] - ( sin(conf1->theta())+sin(conf2->theta()) ) * deltaS[0] );
 
     // positive-drive-direction constraint
+    // 前进约束，即当前位姿的朝向与指向下一位姿的向量夹角为锐角。
     Eigen::Vector2d angle_vec ( cos(conf1->theta()), sin(conf1->theta()) );	   
     _error[1] = penaltyBoundFromBelow(deltaS.dot(angle_vec), 0,0);
     // epsilon=0, otherwise it pushes the first bandpoints away from start
